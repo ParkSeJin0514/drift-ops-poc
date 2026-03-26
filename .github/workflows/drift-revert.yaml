@@ -1,86 +1,139 @@
-name: Drift Revert - Security Group
+name: Drift Detect & Revert
 
 on:
   workflow_dispatch:
-    inputs:
-      drift_resource:
-        description: 'Drift 대상 리소스'
-        required: true
-        default: 'aws_security_group.sg-app-web'
-      drift_reason:
-        description: 'Drift 사유'
-        required: true
-        default: 'Unauthorized ingress 0.0.0.0/0 added on prod SG'
+  schedule:
+    - cron: '0 */6 * * *'
 
 jobs:
-  drift-summary:
+  drift-detect:
     runs-on: ubuntu-latest
+    outputs:
+      has_drift: ${{ steps.plan.outputs.has_drift }}
+      plan_output: ${{ steps.plan.outputs.plan_summary }}
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: ap-northeast-2
     steps:
-      - name: Drift Summary
-        run: |
-          echo "============================================"
-          echo "  DRIFT REVERT REQUEST"
-          echo "============================================"
-          echo "Resource: ${{ github.event.inputs.drift_resource }}"
-          echo "Reason:   ${{ github.event.inputs.drift_reason }}"
-          echo "Time:     $(date)"
-          echo "============================================"
+      - name: Checkout Terraform code
+        uses: actions/checkout@v4
+        with:
+          repository: ParkSeJin0514/skyline-infra-terraform
 
-      - name: Slack 승인 대기 알림
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - name: Terraform Init
+        run: terraform init
+
+      - name: Terraform Plan (drift check)
+        id: plan
+        run: |
+          set +e
+          PLAN_OUTPUT=$(terraform plan -detailed-exitcode -no-color 2>&1)
+          EXIT_CODE=$?
+          set -e
+
+          echo "$PLAN_OUTPUT" > plan_result.txt
+
+          if [ $EXIT_CODE -eq 2 ]; then
+            echo "has_drift=true" >> $GITHUB_OUTPUT
+            SUMMARY=$(echo "$PLAN_OUTPUT" | grep "Plan:" | head -1)
+            echo "plan_summary=$SUMMARY" >> $GITHUB_OUTPUT
+            echo "DRIFT DETECTED"
+          elif [ $EXIT_CODE -eq 0 ]; then
+            echo "has_drift=false" >> $GITHUB_OUTPUT
+            echo "plan_summary=No changes. Infrastructure is up-to-date." >> $GITHUB_OUTPUT
+            echo "NO DRIFT"
+          else
+            echo "has_drift=false" >> $GITHUB_OUTPUT
+            echo "plan_summary=Terraform plan failed" >> $GITHUB_OUTPUT
+            echo "PLAN ERROR"
+            exit 1
+          fi
+
+      - name: Upload plan result
+        if: steps.plan.outputs.has_drift == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: plan-result
+          path: plan_result.txt
+
+      - name: Slack drift 알림
+        if: steps.plan.outputs.has_drift == 'true'
         uses: slackapi/slack-github-action@v2.0.0
         with:
           webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
           webhook-type: incoming-webhook
           payload: |
             {
-              "text": "Drift Revert 승인 대기 중",
+              "text": "Drift Detected - Terraform plan 결과 변경사항 발견",
               "attachments": [
                 {
                   "color": "warning",
                   "fields": [
-                    { "title": "Resource", "value": "${{ github.event.inputs.drift_resource }}", "short": true },
+                    { "title": "Status", "value": "Drift Detected", "short": true },
                     { "title": "Risk", "value": "High", "short": true },
-                    { "title": "Reason", "value": "${{ github.event.inputs.drift_reason }}", "short": false },
-                    { "title": "Scope", "value": "AIDC / prod / internet-facing", "short": true },
-                    { "title": "Owner", "value": "Cloud기술팀", "short": true }
+                    { "title": "Plan Result", "value": "${{ steps.plan.outputs.plan_summary }}", "short": false },
+                    { "title": "Repository", "value": "skyline-infra-terraform", "short": true },
+                    { "title": "Action", "value": "Revert 승인 필요", "short": true }
+                  ]
+                },
+                {
+                  "color": "#439FE0",
+                  "text": "승인하기: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                }
+              ]
+            }
+
+      - name: Slack no drift 알림
+        if: steps.plan.outputs.has_drift == 'false'
+        uses: slackapi/slack-github-action@v2.0.0
+        with:
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+          payload: |
+            {
+              "text": "No Drift - Infrastructure is up-to-date",
+              "attachments": [
+                {
+                  "color": "good",
+                  "fields": [
+                    { "title": "Status", "value": "No drift detected", "short": true },
+                    { "title": "Repository", "value": "skyline-infra-terraform", "short": true }
                   ]
                 }
               ]
             }
 
-      - name: Slack 승인 링크 전송
-        uses: slackapi/slack-github-action@v2.0.0
-        with:
-          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
-          webhook-type: incoming-webhook
-          payload: |
-            {
-              "text": "GitHub에서 승인하기: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-            }
-
   revert:
-    needs: drift-summary
+    needs: drift-detect
+    if: needs.drift-detect.outputs.has_drift == 'true'
     runs-on: ubuntu-latest
     environment: production
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: ap-northeast-2
     steps:
-      - name: Checkout
+      - name: Checkout Terraform code
         uses: actions/checkout@v4
+        with:
+          repository: ParkSeJin0514/skyline-infra-terraform
 
-      - name: Revert 실행
-        run: |
-          echo "========================================="
-          echo "  TERRAFORM APPLY (TARGET REVERT)"
-          echo "========================================="
-          echo "terraform init..."
-          sleep 2
-          echo "terraform plan -target=${{ github.event.inputs.drift_resource }}..."
-          sleep 2
-          echo "terraform apply -target=${{ github.event.inputs.drift_resource }} -auto-approve"
-          sleep 3
-          echo ""
-          echo "Apply complete! Resources: 1 changed."
-          echo "Security Group reverted to IaC state."
-          echo "========================================="
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - name: Terraform Init
+        run: terraform init
+
+      - name: Terraform Apply (revert to IaC state)
+        run: terraform apply -auto-approve -no-color
 
       - name: Slack 완료 알림
         if: success()
@@ -95,8 +148,7 @@ jobs:
                 {
                   "color": "good",
                   "fields": [
-                    { "title": "Resource", "value": "${{ github.event.inputs.drift_resource }}", "short": true },
-                    { "title": "Status", "value": "Reverted", "short": true },
+                    { "title": "Status", "value": "Reverted to IaC state", "short": true },
                     { "title": "Build", "value": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}", "short": false }
                   ]
                 }
@@ -116,7 +168,7 @@ jobs:
                 {
                   "color": "danger",
                   "fields": [
-                    { "title": "Resource", "value": "${{ github.event.inputs.drift_resource }}", "short": true },
+                    { "title": "Status", "value": "Apply failed", "short": true },
                     { "title": "Build", "value": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}", "short": false }
                   ]
                 }
