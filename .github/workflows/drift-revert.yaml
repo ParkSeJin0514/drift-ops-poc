@@ -103,18 +103,19 @@ jobs:
           COLOR="#FAEEDA"
 
           PLAN_SECTION=$(echo "$PLAN_RESULT" | sed -n '/Terraform will perform/,/Plan:/p')
-          CHANGES=$(echo "$PLAN_SECTION" | grep -E "^\s+[~+-].*=" | grep -v "Refreshing\|Reading\|Read complete\|resource \"|data \"")
+          ATTR_CHANGES=$(echo "$PLAN_SECTION" | grep -E "^\s+~\s+\w+" | sed 's/.*~ //' | sed 's/ .*//' | grep -v "resource")
+
+          echo "DEBUG ATTR_CHANGES: $ATTR_CHANGES"
 
           ONLY_TAGS="false"
-          if [ -n "$CHANGES" ]; then
-            NON_TAG_CHANGES=$(echo "$CHANGES" | grep -vi "tags")
-            if [ -z "$NON_TAG_CHANGES" ]; then
+          if [ -n "$ATTR_CHANGES" ]; then
+            NON_TAG_ATTRS=$(echo "$ATTR_CHANGES" | grep -vi "tags")
+            echo "DEBUG NON_TAG_ATTRS: $NON_TAG_ATTRS"
+            if [ -z "$NON_TAG_ATTRS" ]; then
               ONLY_TAGS="true"
             fi
           fi
 
-          echo "DEBUG CHANGES: $CHANGES"
-          echo "DEBUG NON_TAG: $NON_TAG_CHANGES"
           echo "DEBUG ONLY_TAGS: $ONLY_TAGS"
 
           if [ "$ONLY_TAGS" = "true" ]; then
