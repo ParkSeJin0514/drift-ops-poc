@@ -95,7 +95,6 @@ jobs:
         if: steps.plan.outputs.has_drift == 'true'
         run: |
           RESOURCES="${{ steps.plan.outputs.drift_resources }}"
-          DETAILS="${{ steps.plan.outputs.drift_details }}"
           PLAN_RESULT=$(cat plan_result.txt)
 
           RISK="Medium"
@@ -104,15 +103,19 @@ jobs:
           COLOR="#FAEEDA"
 
           PLAN_SECTION=$(echo "$PLAN_RESULT" | sed -n '/Terraform will perform/,/Plan:/p')
-          CHANGES=$(echo "$PLAN_SECTION" | grep -E "^\s+[~+-]" | grep -v "Refreshing\|Reading\|Read complete")
+          CHANGES=$(echo "$PLAN_SECTION" | grep -E "^\s+[~+-].*=" | grep -v "Refreshing\|Reading\|Read complete\|resource \"|data \"")
 
           ONLY_TAGS="false"
-          if echo "$CHANGES" | grep -qi "tags"; then
+          if [ -n "$CHANGES" ]; then
             NON_TAG_CHANGES=$(echo "$CHANGES" | grep -vi "tags")
             if [ -z "$NON_TAG_CHANGES" ]; then
               ONLY_TAGS="true"
             fi
           fi
+
+          echo "DEBUG CHANGES: $CHANGES"
+          echo "DEBUG NON_TAG: $NON_TAG_CHANGES"
+          echo "DEBUG ONLY_TAGS: $ONLY_TAGS"
 
           if [ "$ONLY_TAGS" = "true" ]; then
             RISK="Low"
