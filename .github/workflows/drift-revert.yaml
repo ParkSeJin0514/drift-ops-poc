@@ -10,6 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       has_drift: ${{ steps.plan.outputs.has_drift }}
+      drift_resources: ${{ steps.plan.outputs.drift_resources }}
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -48,13 +49,13 @@ jobs:
             SUMMARY=$(echo "$PLAN_OUTPUT" | grep "Plan:" | head -1)
             echo "plan_summary=$SUMMARY" >> $GITHUB_OUTPUT
 
-            RESOURCES=$(echo "$PLAN_OUTPUT" | grep "# .*will be" | sed 's/^.*# //' | head -5)
+            RESOURCES=$(echo "$PLAN_OUTPUT" | grep "# .*will be" | sed 's/^.*# //' | sed 's/ will be.*//' | head -5)
             echo "drift_resources<<EOF" >> $GITHUB_OUTPUT
             echo "$RESOURCES" >> $GITHUB_OUTPUT
             echo "EOF" >> $GITHUB_OUTPUT
 
             PLAN_SECTION=$(echo "$PLAN_OUTPUT" | sed -n '/Terraform will perform/,/Plan:/p')
-            DETAILS=$(echo "$PLAN_SECTION" | grep -E "^\s+[~+-]" | grep -v "Refreshing\|Reading\|Read complete" | sed 's/^[ ]*//' | head -10)
+            DETAILS=$(echo "$PLAN_SECTION" | grep -E "^\s+[~+-].*=" | grep -v "Refreshing\|Reading\|Read complete" | sed 's/^[ ]*//' | sed 's/"//g' | head -5)
             echo "drift_details<<EOF" >> $GITHUB_OUTPUT
             echo "$DETAILS" >> $GITHUB_OUTPUT
             echo "EOF" >> $GITHUB_OUTPUT
@@ -85,25 +86,33 @@ jobs:
 
       - name: Slack drift 알림
         if: steps.plan.outputs.has_drift == 'true'
-        uses: slackapi/slack-github-action@v2.0.0
-        with:
-          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
-          webhook-type: incoming-webhook
-          payload: |
-            {
-              "text": "*[Drift Detected]*\n\n*Resource:* `${{ steps.plan.outputs.drift_resources }}`\n*Change Details:*\n```${{ steps.plan.outputs.drift_details }}```\n*Plan:* ${{ steps.plan.outputs.plan_summary }}\n*Risk:* High\n*Owner:* Cloud기술팀\n*Action:* Revert 승인 필요\n\n<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|GitHub에서 승인하기>"
-            }
+        run: |
+          RESOURCES=$(cat <<'REOF'
+          ${{ steps.plan.outputs.drift_resources }}
+          REOF
+          )
+          DETAILS=$(cat <<'DEOF'
+          ${{ steps.plan.outputs.drift_details }}
+          DEOF
+          )
+          SUMMARY="${{ steps.plan.outputs.plan_summary }}"
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+          RESOURCES_ESCAPED=$(echo "$RESOURCES" | tr '\n' ' ' | sed 's/  */ /g' | xargs)
+          DETAILS_ESCAPED=$(echo "$DETAILS" | tr '\n' ', ' | sed 's/,$//' | sed 's/  */ /g' | xargs)
+
+          curl -X POST -H 'Content-type: application/json' \
+            --data "{
+              \"text\": \"*[Drift Detected]*\n\n*Resource:* \`${RESOURCES_ESCAPED}\`\n*Change Details:* ${DETAILS_ESCAPED}\n*Plan:* ${SUMMARY}\n*Risk:* High\n*Owner:* Cloud기술팀\n*Action:* Revert 승인 필요\n\n<${RUN_URL}|GitHub에서 승인하기>\"
+            }" \
+            ${{ secrets.SLACK_WEBHOOK_URL }}
 
       - name: Slack no drift 알림
         if: steps.plan.outputs.has_drift == 'false'
-        uses: slackapi/slack-github-action@v2.0.0
-        with:
-          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
-          webhook-type: incoming-webhook
-          payload: |
-            {
-              "text": "*[No Drift]* Infrastructure is up-to-date\nRepository: skyline-infra-terraform"
-            }
+        run: |
+          curl -X POST -H 'Content-type: application/json' \
+            --data '{"text": "*[No Drift]* Infrastructure is up-to-date\nRepository: skyline-infra-terraform"}' \
+            ${{ secrets.SLACK_WEBHOOK_URL }}
 
   revert:
     needs: drift-detect
@@ -137,22 +146,18 @@ jobs:
 
       - name: Slack 완료 알림
         if: success()
-        uses: slackapi/slack-github-action@v2.0.0
-        with:
-          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
-          webhook-type: incoming-webhook
-          payload: |
-            {
-              "text": "*[Drift Revert 완료]*\nResource: `${{ needs.drift-detect.outputs.drift_resources }}`\nStatus: Reverted to IaC state\n<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|Build 확인>"
-            }
+        run: |
+          RESOURCES="${{ needs.drift-detect.outputs.drift_resources }}"
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          curl -X POST -H 'Content-type: application/json' \
+            --data "{\"text\": \"*[Drift Revert 완료]*\nResource: \`${RESOURCES}\`\nStatus: Reverted to IaC state\n<${RUN_URL}|Build 확인>\"}" \
+            ${{ secrets.SLACK_WEBHOOK_URL }}
 
       - name: Slack 실패 알림
         if: failure()
-        uses: slackapi/slack-github-action@v2.0.0
-        with:
-          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
-          webhook-type: incoming-webhook
-          payload: |
-            {
-              "text": "*[Drift Revert 실패]*\nResource: `${{ needs.drift-detect.outputs.drift_resources }}`\n<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|Build 확인>"
-            }
+        run: |
+          RESOURCES="${{ needs.drift-detect.outputs.drift_resources }}"
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          curl -X POST -H 'Content-type: application/json' \
+            --data "{\"text\": \"*[Drift Revert 실패]*\nResource: \`${RESOURCES}\`\n<${RUN_URL}|Build 확인>\"}" \
+            ${{ secrets.SLACK_WEBHOOK_URL }}
