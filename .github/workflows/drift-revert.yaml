@@ -103,7 +103,23 @@ jobs:
           REASON="수동 판단 필요"
           COLOR="#FAEEDA"
 
-          if echo "$RESOURCES" | grep -qi "security_group"; then
+          PLAN_SECTION=$(echo "$PLAN_RESULT" | sed -n '/Terraform will perform/,/Plan:/p')
+          CHANGES=$(echo "$PLAN_SECTION" | grep -E "^\s+[~+-]" | grep -v "Refreshing\|Reading\|Read complete")
+
+          ONLY_TAGS="false"
+          if echo "$CHANGES" | grep -qi "tags"; then
+            NON_TAG_CHANGES=$(echo "$CHANGES" | grep -vi "tags")
+            if [ -z "$NON_TAG_CHANGES" ]; then
+              ONLY_TAGS="true"
+            fi
+          fi
+
+          if [ "$ONLY_TAGS" = "true" ]; then
+            RISK="Low"
+            ACTION="Accept"
+            REASON="태그 변경만 감지 - 운영 영향 없음"
+            COLOR="#1D9E75"
+          elif echo "$RESOURCES" | grep -qi "security_group"; then
             if echo "$PLAN_RESULT" | grep -qi "0.0.0.0/0"; then
               RISK="Critical"
               ACTION="Revert"
@@ -130,11 +146,6 @@ jobs:
             ACTION="Review"
             REASON="컴퓨팅 리소스 변경 - 서비스 영향 확인 필요"
             COLOR="#FAEEDA"
-          elif echo "$DETAILS" | grep -qi "tags"; then
-            RISK="Low"
-            ACTION="Accept"
-            REASON="태그 변경만 감지 - 운영 영향 없음"
-            COLOR="#1D9E75"
           fi
 
           echo "risk_level=$RISK" >> $GITHUB_OUTPUT
