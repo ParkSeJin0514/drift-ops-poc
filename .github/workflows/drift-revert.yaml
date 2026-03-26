@@ -10,7 +10,6 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       has_drift: ${{ steps.plan.outputs.has_drift }}
-      plan_output: ${{ steps.plan.outputs.plan_summary }}
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -49,12 +48,13 @@ jobs:
             SUMMARY=$(echo "$PLAN_OUTPUT" | grep "Plan:" | head -1)
             echo "plan_summary=$SUMMARY" >> $GITHUB_OUTPUT
 
-            RESOURCES=$(echo "$PLAN_OUTPUT" | grep "will be" | sed 's/^  # //' | head -5)
+            RESOURCES=$(echo "$PLAN_OUTPUT" | grep "# .*will be" | sed 's/^.*# //' | head -5)
             echo "drift_resources<<EOF" >> $GITHUB_OUTPUT
             echo "$RESOURCES" >> $GITHUB_OUTPUT
             echo "EOF" >> $GITHUB_OUTPUT
 
-            DETAILS=$(echo "$PLAN_OUTPUT" | grep -A 2 "~\|+\|-" | grep -E "cidr|port|ingress|egress|from_port|to_port|protocol|security_group|instance|ami" | sed 's/^[ ]*//' | head -10)
+            PLAN_SECTION=$(echo "$PLAN_OUTPUT" | sed -n '/Terraform will perform/,/Plan:/p')
+            DETAILS=$(echo "$PLAN_SECTION" | grep -E "^\s+[~+-]" | grep -v "Refreshing\|Reading\|Read complete" | sed 's/^[ ]*//' | head -10)
             echo "drift_details<<EOF" >> $GITHUB_OUTPUT
             echo "$DETAILS" >> $GITHUB_OUTPUT
             echo "EOF" >> $GITHUB_OUTPUT
@@ -62,7 +62,7 @@ jobs:
             echo "DRIFT DETECTED"
           elif [ $EXIT_CODE -eq 0 ]; then
             echo "has_drift=false" >> $GITHUB_OUTPUT
-            echo "plan_summary=No changes. Infrastructure is up-to-date." >> $GITHUB_OUTPUT
+            echo "plan_summary=No changes." >> $GITHUB_OUTPUT
             echo "drift_resources=none" >> $GITHUB_OUTPUT
             echo "drift_details=none" >> $GITHUB_OUTPUT
             echo "NO DRIFT"
@@ -91,25 +91,7 @@ jobs:
           webhook-type: incoming-webhook
           payload: |
             {
-              "text": "Drift Detected - Terraform plan 결과 변경사항 발견",
-              "attachments": [
-                {
-                  "color": "warning",
-                  "fields": [
-                    { "title": "Status", "value": "Drift Detected", "short": true },
-                    { "title": "Risk", "value": "High", "short": true },
-                    { "title": "Drifted Resources", "value": "${{ steps.plan.outputs.drift_resources }}", "short": false },
-                    { "title": "Change Details", "value": "${{ steps.plan.outputs.drift_details }}", "short": false },
-                    { "title": "Plan Summary", "value": "${{ steps.plan.outputs.plan_summary }}", "short": false },
-                    { "title": "Owner", "value": "Cloud기술팀", "short": true },
-                    { "title": "Action", "value": "Revert 승인 필요", "short": true }
-                  ]
-                },
-                {
-                  "color": "#439FE0",
-                  "text": "승인하기: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-                }
-              ]
+              "text": "*[Drift Detected]*\n\n*Resource:* `${{ steps.plan.outputs.drift_resources }}`\n*Change Details:*\n```${{ steps.plan.outputs.drift_details }}```\n*Plan:* ${{ steps.plan.outputs.plan_summary }}\n*Risk:* High\n*Owner:* Cloud기술팀\n*Action:* Revert 승인 필요\n\n<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|GitHub에서 승인하기>"
             }
 
       - name: Slack no drift 알림
@@ -120,16 +102,7 @@ jobs:
           webhook-type: incoming-webhook
           payload: |
             {
-              "text": "No Drift - Infrastructure is up-to-date",
-              "attachments": [
-                {
-                  "color": "good",
-                  "fields": [
-                    { "title": "Status", "value": "No drift detected", "short": true },
-                    { "title": "Repository", "value": "skyline-infra-terraform", "short": true }
-                  ]
-                }
-              ]
+              "text": "*[No Drift]* Infrastructure is up-to-date\nRepository: skyline-infra-terraform"
             }
 
   revert:
@@ -170,16 +143,7 @@ jobs:
           webhook-type: incoming-webhook
           payload: |
             {
-              "text": "Drift Revert 완료",
-              "attachments": [
-                {
-                  "color": "good",
-                  "fields": [
-                    { "title": "Status", "value": "Reverted to IaC state", "short": true },
-                    { "title": "Build", "value": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}", "short": false }
-                  ]
-                }
-              ]
+              "text": "*[Drift Revert 완료]*\nResource: `${{ needs.drift-detect.outputs.drift_resources }}`\nStatus: Reverted to IaC state\n<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|Build 확인>"
             }
 
       - name: Slack 실패 알림
@@ -190,14 +154,5 @@ jobs:
           webhook-type: incoming-webhook
           payload: |
             {
-              "text": "Drift Revert 실패",
-              "attachments": [
-                {
-                  "color": "danger",
-                  "fields": [
-                    { "title": "Status", "value": "Apply failed", "short": true },
-                    { "title": "Build", "value": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}", "short": false }
-                  ]
-                }
-              ]
+              "text": "*[Drift Revert 실패]*\nResource: `${{ needs.drift-detect.outputs.drift_resources }}`\n<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|Build 확인>"
             }
