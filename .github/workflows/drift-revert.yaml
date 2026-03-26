@@ -11,6 +11,8 @@ jobs:
     outputs:
       has_drift: ${{ steps.plan.outputs.has_drift }}
       drift_resources: ${{ steps.plan.outputs.drift_resources }}
+      risk_level: ${{ steps.triage.outputs.risk_level }}
+      recommended_action: ${{ steps.triage.outputs.recommended_action }}
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -54,6 +56,9 @@ jobs:
             echo "$RESOURCES" >> $GITHUB_OUTPUT
             echo "EOF" >> $GITHUB_OUTPUT
 
+            CHANGE_TYPE=$(echo "$PLAN_OUTPUT" | grep "# .*will be" | head -1 | sed 's/.*will be //' | sed 's/ .*//')
+            echo "change_type=$CHANGE_TYPE" >> $GITHUB_OUTPUT
+
             PLAN_SECTION=$(echo "$PLAN_OUTPUT" | sed -n '/Terraform will perform/,/Plan:/p')
             DETAILS=$(echo "$PLAN_SECTION" | grep -E "^\s+[~+-].*=" | grep -v "Refreshing\|Reading\|Read complete" | sed 's/^[ ]*//' | sed 's/"//g' | head -5)
             echo "drift_details<<EOF" >> $GITHUB_OUTPUT
@@ -66,16 +71,72 @@ jobs:
             echo "plan_summary=No changes." >> $GITHUB_OUTPUT
             echo "drift_resources=none" >> $GITHUB_OUTPUT
             echo "drift_details=none" >> $GITHUB_OUTPUT
+            echo "change_type=none" >> $GITHUB_OUTPUT
             echo "NO DRIFT"
           else
             echo "has_drift=false" >> $GITHUB_OUTPUT
             echo "plan_summary=Terraform plan failed" >> $GITHUB_OUTPUT
             echo "drift_resources=none" >> $GITHUB_OUTPUT
             echo "drift_details=none" >> $GITHUB_OUTPUT
+            echo "change_type=none" >> $GITHUB_OUTPUT
             echo "PLAN ERROR"
             echo "$PLAN_OUTPUT"
             exit 1
           fi
+
+      - name: Triage Engine
+        id: triage
+        if: steps.plan.outputs.has_drift == 'true'
+        run: |
+          RESOURCES="${{ steps.plan.outputs.drift_resources }}"
+          DETAILS="${{ steps.plan.outputs.drift_details }}"
+          PLAN_RESULT=$(cat plan_result.txt)
+
+          RISK="Medium"
+          ACTION="Review"
+          REASON="수동 판단 필요"
+          COLOR="#FAEEDA"
+
+          if echo "$RESOURCES" | grep -qi "security_group"; then
+            if echo "$PLAN_RESULT" | grep -qi "0.0.0.0/0"; then
+              RISK="Critical"
+              ACTION="Revert"
+              REASON="전체 인터넷 노출 - 비인가 ingress 추가"
+              COLOR="#E24B4A"
+            else
+              RISK="High"
+              ACTION="Review"
+              REASON="보안 규칙 변경 감지"
+              COLOR="#D85A30"
+            fi
+          elif echo "$RESOURCES" | grep -qi "iam"; then
+            RISK="Critical"
+            ACTION="Revert"
+            REASON="IAM 권한 변경 - 즉시 대응 필요"
+            COLOR="#E24B4A"
+          elif echo "$RESOURCES" | grep -qi "db_instance\|rds"; then
+            RISK="High"
+            ACTION="Review"
+            REASON="데이터베이스 변경 - 데이터 영향 확인 필요"
+            COLOR="#D85A30"
+          elif echo "$RESOURCES" | grep -qi "instance\|launch_template"; then
+            RISK="Medium"
+            ACTION="Review"
+            REASON="컴퓨팅 리소스 변경 - 서비스 영향 확인 필요"
+            COLOR="#FAEEDA"
+          elif echo "$DETAILS" | grep -qi "tags"; then
+            RISK="Low"
+            ACTION="Accept"
+            REASON="태그 변경만 감지 - 운영 영향 없음"
+            COLOR="#1D9E75"
+          fi
+
+          echo "risk_level=$RISK" >> $GITHUB_OUTPUT
+          echo "recommended_action=$ACTION" >> $GITHUB_OUTPUT
+          echo "reason=$REASON" >> $GITHUB_OUTPUT
+          echo "color=$COLOR" >> $GITHUB_OUTPUT
+
+          echo "TRIAGE RESULT: Risk=$RISK Action=$ACTION Reason=$REASON"
 
       - name: Upload plan result
         if: steps.plan.outputs.has_drift == 'true'
@@ -91,12 +152,37 @@ jobs:
           DETAILS=$(echo '${{ steps.plan.outputs.drift_details }}' | tr '\n' ', ' | sed 's/,$//' | xargs)
           SUMMARY="${{ steps.plan.outputs.plan_summary }}"
           RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          RISK="${{ steps.triage.outputs.risk_level }}"
+          ACTION="${{ steps.triage.outputs.recommended_action }}"
+          REASON="${{ steps.triage.outputs.reason }}"
+          COLOR="${{ steps.triage.outputs.color }}"
+
+          if [ "$RISK" = "Critical" ]; then
+            RISK_EMOJI=":red_circle:"
+          elif [ "$RISK" = "High" ]; then
+            RISK_EMOJI=":large_orange_circle:"
+          elif [ "$RISK" = "Medium" ]; then
+            RISK_EMOJI=":large_yellow_circle:"
+          else
+            RISK_EMOJI=":large_green_circle:"
+          fi
+
+          if [ "$ACTION" = "Revert" ]; then
+            ACTION_TEXT="Revert 승인 필요"
+            BUTTON_TEXT="GitHub에서 승인하기"
+          elif [ "$ACTION" = "Accept" ]; then
+            ACTION_TEXT="Accept (코드 반영 필요)"
+            BUTTON_TEXT="GitHub에서 확인하기"
+          else
+            ACTION_TEXT="Review (수동 판단 필요)"
+            BUTTON_TEXT="GitHub에서 확인하기"
+          fi
 
           curl -X POST -H 'Content-type: application/json' \
             --data "{
               \"attachments\": [
                 {
-                  \"color\": \"#E24B4A\",
+                  \"color\": \"${COLOR}\",
                   \"blocks\": [
                     {
                       \"type\": \"header\",
@@ -106,13 +192,13 @@ jobs:
                       \"type\": \"section\",
                       \"fields\": [
                         { \"type\": \"mrkdwn\", \"text\": \"*Resource:*\n\`${RESOURCES}\`\" },
-                        { \"type\": \"mrkdwn\", \"text\": \"*Risk:*\n:red_circle: High\" }
+                        { \"type\": \"mrkdwn\", \"text\": \"*Risk:*\n${RISK_EMOJI} ${RISK}\" }
                       ]
                     },
                     {
                       \"type\": \"section\",
                       \"fields\": [
-                        { \"type\": \"mrkdwn\", \"text\": \"*Change:*\ningress rule 변경 (콘솔 수동 변경 추정)\" },
+                        { \"type\": \"mrkdwn\", \"text\": \"*Reason:*\n${REASON}\" },
                         { \"type\": \"mrkdwn\", \"text\": \"*Plan:*\n${SUMMARY}\" }
                       ]
                     },
@@ -120,7 +206,7 @@ jobs:
                       \"type\": \"section\",
                       \"fields\": [
                         { \"type\": \"mrkdwn\", \"text\": \"*Owner:*\nCloud기술팀\" },
-                        { \"type\": \"mrkdwn\", \"text\": \"*Action:*\nRevert 승인 필요\" }
+                        { \"type\": \"mrkdwn\", \"text\": \"*Action:*\n${ACTION_TEXT}\" }
                       ]
                     },
                     {
@@ -135,7 +221,7 @@ jobs:
                       \"elements\": [
                         {
                           \"type\": \"button\",
-                          \"text\": { \"type\": \"plain_text\", \"text\": \"GitHub에서 승인하기\" },
+                          \"text\": { \"type\": \"plain_text\", \"text\": \"${BUTTON_TEXT}\" },
                           \"url\": \"${RUN_URL}\",
                           \"style\": \"primary\"
                         }
@@ -175,7 +261,7 @@ jobs:
 
   revert:
     needs: drift-detect
-    if: needs.drift-detect.outputs.has_drift == 'true'
+    if: needs.drift-detect.outputs.has_drift == 'true' && needs.drift-detect.outputs.recommended_action == 'Revert'
     runs-on: ubuntu-latest
     environment: production
     env:
