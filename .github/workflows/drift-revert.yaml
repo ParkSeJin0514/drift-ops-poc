@@ -53,6 +53,7 @@ jobs:
             echo "has_drift=false" >> $GITHUB_OUTPUT
             echo "plan_summary=Terraform plan failed" >> $GITHUB_OUTPUT
             echo "PLAN ERROR"
+            echo "$PLAN_OUTPUT"
             exit 1
           fi
 
