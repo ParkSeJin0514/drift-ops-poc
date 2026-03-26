@@ -3,15 +3,23 @@ name: Monthly Drift Report
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 19 * * *'
+    - cron: '0 * * * *'
 
 permissions:
   issues: read
+  contents: write
 
 jobs:
   report:
     runs-on: ubuntu-latest
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: ap-northeast-2
     steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
       - name: Generate Monthly Report
         id: report
         uses: actions/github-script@v7
@@ -21,9 +29,10 @@ jobs:
             const now = new Date();
             const year = now.getFullYear();
             const month = now.getMonth();
-            const since = new Date(year, month - 1, 1).toISOString();
-            const until = new Date(year, month, 1).toISOString();
-            const monthName = new Date(year, month - 1).toLocaleDateString('ko-KR', { year: 'numeric', month: 'long' });
+            const since = new Date(year, month, 1).toISOString();
+            const until = new Date(year, month + 1, 1).toISOString();
+            const monthName = now.toLocaleDateString('ko-KR', { year: 'numeric', month: 'long' });
+            const fileMonth = `${year}-${String(month + 1).padStart(2, '0')}`;
 
             const issues = await github.rest.issues.listForRepo({
               owner: context.repo.owner,
@@ -66,12 +75,63 @@ jobs:
             const topResources = Object.entries(resourceCounts)
               .sort((a, b) => b[1] - a[1])
               .slice(0, 5)
-              .map(([name, count]) => `├ ${name}: ${count}건`)
+              .map(([name, count]) => `| ${name} | ${count}건 |`)
               .join('\n');
 
             const pct = (n) => total > 0 ? Math.round(n / total * 100) : 0;
 
-            const lines = [
+            const issueList = monthIssues.map(i => {
+              const labels = i.labels.map(l => l.name).join(', ');
+              const date = new Date(i.created_at).toISOString().split('T')[0];
+              return `| [#${i.number}](${i.html_url}) | ${i.title.replace(/\[Drift\]\s*/, '')} | ${labels} | ${i.state} | ${date} |`;
+            }).join('\n');
+
+            const mdReport = [
+              `# Monthly Drift Report - ${monthName}`,
+              ``,
+              `> 생성일: ${now.toISOString().split('T')[0]}`,
+              ``,
+              `## 요약`,
+              ``,
+              `| 항목 | 건수 | 비율 |`,
+              `|------|------|------|`,
+              `| 총 drift | ${total}건 | 100% |`,
+              `| Critical | ${critical}건 | ${pct(critical)}% |`,
+              `| High | ${high}건 | ${pct(high)}% |`,
+              `| Medium | ${medium}건 | ${pct(medium)}% |`,
+              `| Low | ${low}건 | ${pct(low)}% |`,
+              ``,
+              `## 처리 현황`,
+              ``,
+              `| Action | 건수 | 비율 |`,
+              `|--------|------|------|`,
+              `| Reverted | ${reverted}건 | ${pct(reverted)}% |`,
+              `| Review (Ticket) | ${reviewed}건 | ${pct(reviewed)}% |`,
+              `| Accepted | ${accepted}건 | ${pct(accepted)}% |`,
+              ``,
+              `| 상태 | 건수 |`,
+              `|------|------|`,
+              `| Open (미결) | ${openCount}건 |`,
+              `| Closed (완료) | ${closedCount}건 |`,
+              ``,
+              `## 주요 drift 리소스`,
+              ``,
+              `| Resource | 건수 |`,
+              `|----------|------|`,
+              topResources || '| 데이터 없음 | - |',
+              ``,
+              `## 전체 drift 목록`,
+              ``,
+              `| # | Resource | Labels | Status | Date |`,
+              `|---|----------|--------|--------|------|`,
+              issueList || '| - | 데이터 없음 | - | - | - |',
+            ].join('\n');
+
+            const fs = require('fs');
+            fs.mkdirSync('reports', { recursive: true });
+            fs.writeFileSync(`reports/drift-report-${fileMonth}.md`, mdReport);
+
+            const slackLines = [
               `*[Monthly Drift Report]* ${monthName}`,
               ``,
               `*총 drift 건수:* ${total}건`,
@@ -86,18 +146,34 @@ jobs:
               `Accepted: ${accepted}건 (${pct(accepted)}%)`,
               ``,
               `*미결 / 완료:*`,
-              `Open: ${openCount}건 | Closed: ${closedCount}건`,
-              ``,
-              `*주요 drift 리소스:*`,
-              topResources || '데이터 없음'
+              `Open: ${openCount}건 | Closed: ${closedCount}건`
             ];
 
-            const report = lines.join('\\n');
-            core.setOutput('report', report);
+            const slackReport = slackLines.join('\\n');
+            core.setOutput('report', slackReport);
+            core.setOutput('file_month', fileMonth);
+
+      - name: Save report to GitHub repo
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add reports/
+          git commit -m "monthly report: ${{ steps.report.outputs.file_month }}" || echo "No changes to commit"
+          git push
+
+      - name: Upload report to S3
+        run: |
+          FILE_MONTH="${{ steps.report.outputs.file_month }}"
+          aws s3 cp "reports/drift-report-${FILE_MONTH}.md" \
+            "s3://skyline-terraform/drift-reports/drift-report-${FILE_MONTH}.md"
+          echo "Uploaded to s3://skyline-terraform/drift-reports/drift-report-${FILE_MONTH}.md"
 
       - name: Slack 리포트 발행
         run: |
           REPORT="${{ steps.report.outputs.report }}"
+          FILE_MONTH="${{ steps.report.outputs.file_month }}"
+          REPO_URL="https://github.com/ParkSeJin0514/drift-ops-poc/blob/main/reports/drift-report-${FILE_MONTH}.md"
+
           curl -X POST -H 'Content-type: application/json' \
             --data "{
               \"attachments\": [
@@ -120,9 +196,14 @@ jobs:
                       \"elements\": [
                         {
                           \"type\": \"button\",
-                          \"text\": { \"type\": \"plain_text\", \"text\": \"전체 Issue 확인\" },
-                          \"url\": \"https://github.com/ParkSeJin0514/drift-ops-poc/issues?q=label%3ADrift\",
+                          \"text\": { \"type\": \"plain_text\", \"text\": \"전체 리포트 보기\" },
+                          \"url\": \"${REPO_URL}\",
                           \"style\": \"primary\"
+                        },
+                        {
+                          \"type\": \"button\",
+                          \"text\": { \"type\": \"plain_text\", \"text\": \"전체 Issue 확인\" },
+                          \"url\": \"https://github.com/ParkSeJin0514/drift-ops-poc/issues?q=label%3ADrift\"
                         }
                       ]
                     }
