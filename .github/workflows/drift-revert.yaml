@@ -87,23 +87,63 @@ jobs:
       - name: Slack drift 알림
         if: steps.plan.outputs.has_drift == 'true'
         run: |
-          RESOURCES=$(cat <<'REOF'
-          ${{ steps.plan.outputs.drift_resources }}
-          REOF
-          )
-          DETAILS=$(cat <<'DEOF'
-          ${{ steps.plan.outputs.drift_details }}
-          DEOF
-          )
+          RESOURCES=$(echo '${{ steps.plan.outputs.drift_resources }}' | tr '\n' ' ' | xargs)
+          DETAILS=$(echo '${{ steps.plan.outputs.drift_details }}' | tr '\n' ', ' | sed 's/,$//' | xargs)
           SUMMARY="${{ steps.plan.outputs.plan_summary }}"
           RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
 
-          RESOURCES_ESCAPED=$(echo "$RESOURCES" | tr '\n' ' ' | sed 's/  */ /g' | xargs)
-          DETAILS_ESCAPED=$(echo "$DETAILS" | tr '\n' ', ' | sed 's/,$//' | sed 's/  */ /g' | xargs)
-
           curl -X POST -H 'Content-type: application/json' \
             --data "{
-              \"text\": \"*[Drift Detected]*\n\n*Resource:* \`${RESOURCES_ESCAPED}\`\n*Change Details:* ${DETAILS_ESCAPED}\n*Plan:* ${SUMMARY}\n*Risk:* High\n*Owner:* Cloud기술팀\n*Action:* Revert 승인 필요\n\n<${RUN_URL}|GitHub에서 승인하기>\"
+              \"attachments\": [
+                {
+                  \"color\": \"#E24B4A\",
+                  \"blocks\": [
+                    {
+                      \"type\": \"header\",
+                      \"text\": { \"type\": \"plain_text\", \"text\": \"Drift Detected\" }
+                    },
+                    {
+                      \"type\": \"section\",
+                      \"fields\": [
+                        { \"type\": \"mrkdwn\", \"text\": \"*Resource:*\n\`${RESOURCES}\`\" },
+                        { \"type\": \"mrkdwn\", \"text\": \"*Risk:*\n:red_circle: High\" }
+                      ]
+                    },
+                    {
+                      \"type\": \"section\",
+                      \"fields\": [
+                        { \"type\": \"mrkdwn\", \"text\": \"*Change:*\ningress rule 변경 (콘솔 수동 변경 추정)\" },
+                        { \"type\": \"mrkdwn\", \"text\": \"*Plan:*\n${SUMMARY}\" }
+                      ]
+                    },
+                    {
+                      \"type\": \"section\",
+                      \"fields\": [
+                        { \"type\": \"mrkdwn\", \"text\": \"*Owner:*\nCloud기술팀\" },
+                        { \"type\": \"mrkdwn\", \"text\": \"*Action:*\nRevert 승인 필요\" }
+                      ]
+                    },
+                    {
+                      \"type\": \"section\",
+                      \"text\": { \"type\": \"mrkdwn\", \"text\": \"*Change Details:*\n${DETAILS}\" }
+                    },
+                    {
+                      \"type\": \"divider\"
+                    },
+                    {
+                      \"type\": \"actions\",
+                      \"elements\": [
+                        {
+                          \"type\": \"button\",
+                          \"text\": { \"type\": \"plain_text\", \"text\": \"GitHub에서 승인하기\" },
+                          \"url\": \"${RUN_URL}\",
+                          \"style\": \"primary\"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
             }" \
             ${{ secrets.SLACK_WEBHOOK_URL }}
 
@@ -111,7 +151,26 @@ jobs:
         if: steps.plan.outputs.has_drift == 'false'
         run: |
           curl -X POST -H 'Content-type: application/json' \
-            --data '{"text": "*[No Drift]* Infrastructure is up-to-date\nRepository: skyline-infra-terraform"}' \
+            --data '{
+              "attachments": [
+                {
+                  "color": "#1D9E75",
+                  "blocks": [
+                    {
+                      "type": "header",
+                      "text": { "type": "plain_text", "text": "No Drift" }
+                    },
+                    {
+                      "type": "section",
+                      "fields": [
+                        { "type": "mrkdwn", "text": "*Status:*\nInfrastructure is up-to-date" },
+                        { "type": "mrkdwn", "text": "*Repository:*\nskyline-infra-terraform" }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }' \
             ${{ secrets.SLACK_WEBHOOK_URL }}
 
   revert:
@@ -150,7 +209,30 @@ jobs:
           RESOURCES="${{ needs.drift-detect.outputs.drift_resources }}"
           RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           curl -X POST -H 'Content-type: application/json' \
-            --data "{\"text\": \"*[Drift Revert 완료]*\nResource: \`${RESOURCES}\`\nStatus: Reverted to IaC state\n<${RUN_URL}|Build 확인>\"}" \
+            --data "{
+              \"attachments\": [
+                {
+                  \"color\": \"#1D9E75\",
+                  \"blocks\": [
+                    {
+                      \"type\": \"header\",
+                      \"text\": { \"type\": \"plain_text\", \"text\": \"Drift Revert 완료\" }
+                    },
+                    {
+                      \"type\": \"section\",
+                      \"fields\": [
+                        { \"type\": \"mrkdwn\", \"text\": \"*Resource:*\n\`${RESOURCES}\`\" },
+                        { \"type\": \"mrkdwn\", \"text\": \"*Status:*\n:white_check_mark: Reverted to IaC state\" }
+                      ]
+                    },
+                    {
+                      \"type\": \"section\",
+                      \"text\": { \"type\": \"mrkdwn\", \"text\": \"<${RUN_URL}|Build 확인>\" }
+                    }
+                  ]
+                }
+              ]
+            }" \
             ${{ secrets.SLACK_WEBHOOK_URL }}
 
       - name: Slack 실패 알림
@@ -159,5 +241,28 @@ jobs:
           RESOURCES="${{ needs.drift-detect.outputs.drift_resources }}"
           RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           curl -X POST -H 'Content-type: application/json' \
-            --data "{\"text\": \"*[Drift Revert 실패]*\nResource: \`${RESOURCES}\`\n<${RUN_URL}|Build 확인>\"}" \
+            --data "{
+              \"attachments\": [
+                {
+                  \"color\": \"#E24B4A\",
+                  \"blocks\": [
+                    {
+                      \"type\": \"header\",
+                      \"text\": { \"type\": \"plain_text\", \"text\": \"Drift Revert 실패\" }
+                    },
+                    {
+                      \"type\": \"section\",
+                      \"fields\": [
+                        { \"type\": \"mrkdwn\", \"text\": \"*Resource:*\n\`${RESOURCES}\`\" },
+                        { \"type\": \"mrkdwn\", \"text\": \"*Status:*\n:x: Apply failed\" }
+                      ]
+                    },
+                    {
+                      \"type\": \"section\",
+                      \"text\": { \"type\": \"mrkdwn\", \"text\": \"<${RUN_URL}|Build 확인>\" }
+                    }
+                  ]
+                }
+              ]
+            }" \
             ${{ secrets.SLACK_WEBHOOK_URL }}
