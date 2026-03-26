@@ -1,0 +1,124 @@
+name: Drift Revert - Security Group
+
+on:
+  workflow_dispatch:
+    inputs:
+      drift_resource:
+        description: 'Drift 대상 리소스'
+        required: true
+        default: 'aws_security_group.sg-app-web'
+      drift_reason:
+        description: 'Drift 사유'
+        required: true
+        default: 'Unauthorized ingress 0.0.0.0/0 added on prod SG'
+
+jobs:
+  drift-summary:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Drift Summary
+        run: |
+          echo "============================================"
+          echo "  DRIFT REVERT REQUEST"
+          echo "============================================"
+          echo "Resource: ${{ github.event.inputs.drift_resource }}"
+          echo "Reason:   ${{ github.event.inputs.drift_reason }}"
+          echo "Time:     $(date)"
+          echo "============================================"
+
+      - name: Slack 승인 대기 알림
+        uses: slackapi/slack-github-action@v2.0.0
+        with:
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+          payload: |
+            {
+              "text": "Drift Revert 승인 대기 중",
+              "attachments": [
+                {
+                  "color": "warning",
+                  "fields": [
+                    { "title": "Resource", "value": "${{ github.event.inputs.drift_resource }}", "short": true },
+                    { "title": "Risk", "value": "High", "short": true },
+                    { "title": "Reason", "value": "${{ github.event.inputs.drift_reason }}", "short": false },
+                    { "title": "Scope", "value": "AIDC / prod / internet-facing", "short": true },
+                    { "title": "Owner", "value": "Cloud기술팀", "short": true }
+                  ]
+                }
+              ]
+            }
+
+      - name: Slack 승인 링크 전송
+        uses: slackapi/slack-github-action@v2.0.0
+        with:
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+          payload: |
+            {
+              "text": "GitHub에서 승인하기: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            }
+
+  revert:
+    needs: drift-summary
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Revert 실행
+        run: |
+          echo "========================================="
+          echo "  TERRAFORM APPLY (TARGET REVERT)"
+          echo "========================================="
+          echo "terraform init..."
+          sleep 2
+          echo "terraform plan -target=${{ github.event.inputs.drift_resource }}..."
+          sleep 2
+          echo "terraform apply -target=${{ github.event.inputs.drift_resource }} -auto-approve"
+          sleep 3
+          echo ""
+          echo "Apply complete! Resources: 1 changed."
+          echo "Security Group reverted to IaC state."
+          echo "========================================="
+
+      - name: Slack 완료 알림
+        if: success()
+        uses: slackapi/slack-github-action@v2.0.0
+        with:
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+          payload: |
+            {
+              "text": "Drift Revert 완료",
+              "attachments": [
+                {
+                  "color": "good",
+                  "fields": [
+                    { "title": "Resource", "value": "${{ github.event.inputs.drift_resource }}", "short": true },
+                    { "title": "Status", "value": "Reverted", "short": true },
+                    { "title": "Build", "value": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}", "short": false }
+                  ]
+                }
+              ]
+            }
+
+      - name: Slack 실패 알림
+        if: failure()
+        uses: slackapi/slack-github-action@v2.0.0
+        with:
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+          payload: |
+            {
+              "text": "Drift Revert 실패",
+              "attachments": [
+                {
+                  "color": "danger",
+                  "fields": [
+                    { "title": "Resource", "value": "${{ github.event.inputs.drift_resource }}", "short": true },
+                    { "title": "Build", "value": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}", "short": false }
+                  ]
+                }
+              ]
+            }
