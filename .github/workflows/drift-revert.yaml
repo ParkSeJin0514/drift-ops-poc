@@ -30,6 +30,9 @@ jobs:
       - name: Terraform Init
         run: terraform init
 
+      - name: Create tfvars
+        run: echo '${{ secrets.TERRAFORM_TFVARS }}' > terraform.tfvars
+
       - name: Terraform Plan (drift check)
         id: plan
         run: |
@@ -134,6 +137,9 @@ jobs:
 
       - name: Terraform Init
         run: terraform init
+
+      - name: Create tfvars
+        run: echo '${{ secrets.TERRAFORM_TFVARS }}' > terraform.tfvars
 
       - name: Terraform Apply (revert to IaC state)
         run: terraform apply -auto-approve -no-color
