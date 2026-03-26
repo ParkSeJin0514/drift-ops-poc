@@ -19,8 +19,11 @@ jobs:
     outputs:
       has_drift: ${{ steps.plan.outputs.has_drift }}
       drift_resources: ${{ steps.plan.outputs.drift_resources }}
+      drift_details: ${{ steps.plan.outputs.drift_details }}
+      plan_summary: ${{ steps.plan.outputs.plan_summary }}
       risk_level: ${{ steps.triage.outputs.risk_level }}
       recommended_action: ${{ steps.triage.outputs.recommended_action }}
+      issue_url: ${{ steps.create_issue.outputs.issue_url }}
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -242,7 +245,7 @@ jobs:
             BUTTON1_URL="${ISSUE_URL}"
             BUTTON2=""
           else
-            ACTION_TEXT="Accept - 코드 반영 필요"
+            ACTION_TEXT="Accept - PR 자동 생성됨"
             BUTTON1_TEXT="Issue 확인"
             BUTTON1_URL="${ISSUE_URL}"
             BUTTON2=""
@@ -417,6 +420,120 @@ jobs:
                     {
                       \"type\": \"section\",
                       \"text\": { \"type\": \"mrkdwn\", \"text\": \"<${RUN_URL}|Build 확인>\" }
+                    }
+                  ]
+                }
+              ]
+            }" \
+            ${{ secrets.SLACK_WEBHOOK_URL }}
+
+  accept:
+    needs: drift-detect
+    if: needs.drift-detect.outputs.has_drift == 'true' && needs.drift-detect.outputs.recommended_action == 'Accept'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Terraform code
+        uses: actions/checkout@v4
+        with:
+          repository: ParkSeJin0514/skyline-infra-terraform
+          token: ${{ secrets.PAT_TOKEN }}
+
+      - name: Create accept branch and PR
+        run: |
+          RESOURCES=$(echo '${{ needs.drift-detect.outputs.drift_resources }}' | tr '\n' ' ' | xargs)
+          DETAILS=$(echo '${{ needs.drift-detect.outputs.drift_details }}' | tr '\n' ', ' | sed 's/,$//' | xargs)
+          SUMMARY="${{ needs.drift-detect.outputs.plan_summary }}"
+          ISSUE_URL="${{ needs.drift-detect.outputs.issue_url }}"
+          DATE=$(date +%Y%m%d-%H%M%S)
+          BRANCH="drift-accept/${DATE}"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git checkout -b "$BRANCH"
+
+          mkdir -p drift-records
+
+          cat > "drift-records/accept-${DATE}.md" << DOCEOF
+          # Drift Accept Record
+
+          - **Date:** $(date +%Y-%m-%d)
+          - **Resource:** ${RESOURCES}
+          - **Risk:** ${{ needs.drift-detect.outputs.risk_level }}
+          - **Reason:** 콘솔 변경을 코드에 반영 (Accept)
+          - **Plan:** ${SUMMARY}
+          - **Issue:** ${ISSUE_URL}
+
+          ## 변경 내용
+
+          ${DETAILS}
+
+          ## TODO
+
+          - [ ] 해당 리소스의 .tf 코드를 현재 인프라 상태에 맞게 수정
+          - [ ] terraform plan으로 drift 해소 확인
+          DOCEOF
+
+          git add .
+          git commit -m "drift-accept: ${RESOURCES} (${DATE})"
+          git push origin "$BRANCH"
+
+          PR_BODY="## Drift Accept
+
+          이 PR은 콘솔에서 발생한 변경을 Terraform 코드에 반영하기 위해 자동 생성되었습니다.
+
+          | Field | Value |
+          |-------|-------|
+          | **Resource** | \`${RESOURCES}\` |
+          | **Risk** | ${{ needs.drift-detect.outputs.risk_level }} |
+          | **Plan** | ${SUMMARY} |
+          | **Issue** | ${ISSUE_URL} |
+
+          ### TODO
+          - [ ] .tf 코드를 현재 인프라 상태에 맞게 수정
+          - [ ] terraform plan 확인 (변경사항 0)
+          - [ ] 리뷰 후 merge"
+
+          gh pr create \
+            --repo ParkSeJin0514/skyline-infra-terraform \
+            --base main \
+            --head "$BRANCH" \
+            --title "[Drift Accept] ${RESOURCES}" \
+            --body "$PR_BODY"
+        env:
+          GH_TOKEN: ${{ secrets.PAT_TOKEN }}
+
+      - name: Slack Accept PR 알림
+        run: |
+          RESOURCES=$(echo '${{ needs.drift-detect.outputs.drift_resources }}' | tr '\n' ' ' | xargs)
+          PR_URL="https://github.com/ParkSeJin0514/skyline-infra-terraform/pulls"
+          curl -X POST -H 'Content-type: application/json' \
+            --data "{
+              \"attachments\": [
+                {
+                  \"color\": \"#1D9E75\",
+                  \"blocks\": [
+                    {
+                      \"type\": \"header\",
+                      \"text\": { \"type\": \"plain_text\", \"text\": \"Drift Accept - PR 생성됨\" }
+                    },
+                    {
+                      \"type\": \"section\",
+                      \"fields\": [
+                        { \"type\": \"mrkdwn\", \"text\": \"*Resource:*\n\`${RESOURCES}\`\" },
+                        { \"type\": \"mrkdwn\", \"text\": \"*Status:*\n코드 반영 PR 자동 생성\" }
+                      ]
+                    },
+                    {
+                      \"type\": \"actions\",
+                      \"elements\": [
+                        {
+                          \"type\": \"button\",
+                          \"text\": { \"type\": \"plain_text\", \"text\": \"PR 확인하기\" },
+                          \"url\": \"${PR_URL}\",
+                          \"style\": \"primary\"
+                        }
+                      ]
                     }
                   ]
                 }
