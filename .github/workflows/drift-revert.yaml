@@ -233,6 +233,43 @@ jobs:
             }" \
             ${{ secrets.SLACK_WEBHOOK_URL }}
 
+      - name: Create Drift Issue
+        if: steps.plan.outputs.has_drift == 'true'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const risk = '${{ steps.triage.outputs.risk_level }}';
+            const action = '${{ steps.triage.outputs.recommended_action }}';
+            const reason = '${{ steps.triage.outputs.reason }}';
+            const resources = `${{ steps.plan.outputs.drift_resources }}`.trim();
+            const summary = '${{ steps.plan.outputs.plan_summary }}';
+            const runUrl = '${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}';
+            const now = new Date().toISOString().split('T')[0];
+
+            const body = [
+              `## Drift Detection Record`,
+              ``,
+              `| Field | Value |`,
+              `|-------|-------|`,
+              `| **Resource** | \`${resources}\` |`,
+              `| **Risk** | ${risk} |`,
+              `| **Action** | ${action} |`,
+              `| **Reason** | ${reason} |`,
+              `| **Plan** | ${summary} |`,
+              `| **Owner** | Cloud기술팀 |`,
+              `| **Detected** | ${now} |`,
+              `| **Workflow** | [Run Link](${runUrl}) |`,
+            ].join('\n');
+
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `[Drift] ${resources} - ${now}`,
+              body: body,
+              labels: ['drift', risk.toLowerCase(), action.toLowerCase()]
+            });
+
       - name: Slack no drift 알림
         if: steps.plan.outputs.has_drift == 'false'
         run: |
