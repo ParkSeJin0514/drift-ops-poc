@@ -6,23 +6,23 @@
 
 | 항목 | 건수 | 비율 |
 |------|------|------|
-| 총 drift | 10건 | 100% |
-| Critical | 5건 | 50% |
-| High | 1건 | 10% |
-| Medium | 3건 | 30% |
-| Low | 1건 | 10% |
+| 총 drift | 11건 | 100% |
+| Critical | 5건 | 45% |
+| High | 1건 | 9% |
+| Medium | 3건 | 27% |
+| Low | 2건 | 18% |
 
 ## 처리 현황
 
 | Action | 건수 | 비율 |
 |--------|------|------|
-| Reverted | 5건 | 50% |
-| Review (Ticket) | 4건 | 40% |
-| Accepted | 1건 | 10% |
+| Reverted | 5건 | 45% |
+| Review (Ticket) | 4건 | 36% |
+| Accepted | 2건 | 18% |
 
 | 상태 | 건수 |
 |------|------|
-| Open (미결) | 0건 |
+| Open (미결) | 1건 |
 | Closed (완료) | 10건 |
 
 ## 주요 drift 리소스
@@ -30,12 +30,13 @@
 | Resource | 건수 |
 |----------|------|
 | aws_security_group.this | 6건 |
-| aws_instance.this | 4건 |
+| aws_instance.this | 5건 |
 
 ## 전체 drift 목록
 
 | # | Resource | Labels | Status | Date |
 |---|----------|--------|--------|------|
+| [#11](https://github.com/ParkSeJin0514/drift-ops-poc/issues/11) | module.admin_ec2.aws_instance.this - 2026-03-26 | Drift, Low, Accept | open | 2026-03-26 |
 | [#10](https://github.com/ParkSeJin0514/drift-ops-poc/issues/10) | module.admin_ec2.aws_instance.this - 2026-03-26 | Drift, Low, Accept | closed | 2026-03-26 |
 | [#9](https://github.com/ParkSeJin0514/drift-ops-poc/issues/9) | module.admin_ec2.aws_instance.this - 2026-03-26 | Drift, Medium, Review, Ticket | closed | 2026-03-26 |
 | [#8](https://github.com/ParkSeJin0514/drift-ops-poc/issues/8) | module.admin_ec2.aws_instance.this - 2026-03-26 | Drift, Medium, Review, Ticket | closed | 2026-03-26 |
