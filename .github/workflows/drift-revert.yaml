@@ -109,7 +109,7 @@ jobs:
 
           ONLY_TAGS="false"
           if [ -n "$ATTR_CHANGES" ]; then
-            NON_TAG_ATTRS=$(echo "$ATTR_CHANGES" | grep -vi "tags")
+            NON_TAG_ATTRS=$(echo "$ATTR_CHANGES" | grep -vi "tags" || true)
             echo "DEBUG NON_TAG_ATTRS: $NON_TAG_ATTRS"
             if [ -z "$NON_TAG_ATTRS" ]; then
               ONLY_TAGS="true"
