@@ -5,6 +5,10 @@ on:
   schedule:
     - cron: '*/30 * * * *'
 
+concurrency:
+  group: drift-ops
+  cancel-in-progress: true
+
 permissions:
   issues: write
   contents: read
@@ -60,9 +64,6 @@ jobs:
             echo "$RESOURCES" >> $GITHUB_OUTPUT
             echo "EOF" >> $GITHUB_OUTPUT
 
-            CHANGE_TYPE=$(echo "$PLAN_OUTPUT" | grep "# .*will be" | head -1 | sed 's/.*will be //' | sed 's/ .*//')
-            echo "change_type=$CHANGE_TYPE" >> $GITHUB_OUTPUT
-
             PLAN_SECTION=$(echo "$PLAN_OUTPUT" | sed -n '/Terraform will perform/,/Plan:/p')
             DETAILS=$(echo "$PLAN_SECTION" | grep -E "^\s+[~+-].*=" | grep -v "Refreshing\|Reading\|Read complete" | sed 's/^[ ]*//' | sed 's/"//g' | head -5)
             echo "drift_details<<EOF" >> $GITHUB_OUTPUT
@@ -75,14 +76,12 @@ jobs:
             echo "plan_summary=No changes." >> $GITHUB_OUTPUT
             echo "drift_resources=none" >> $GITHUB_OUTPUT
             echo "drift_details=none" >> $GITHUB_OUTPUT
-            echo "change_type=none" >> $GITHUB_OUTPUT
             echo "NO DRIFT"
           else
             echo "has_drift=false" >> $GITHUB_OUTPUT
             echo "plan_summary=Terraform plan failed" >> $GITHUB_OUTPUT
             echo "drift_resources=none" >> $GITHUB_OUTPUT
             echo "drift_details=none" >> $GITHUB_OUTPUT
-            echo "change_type=none" >> $GITHUB_OUTPUT
             echo "PLAN ERROR"
             echo "$PLAN_OUTPUT"
             exit 1
@@ -140,14 +139,74 @@ jobs:
           echo "reason=$REASON" >> $GITHUB_OUTPUT
           echo "color=$COLOR" >> $GITHUB_OUTPUT
 
-          echo "TRIAGE RESULT: Risk=$RISK Action=$ACTION Reason=$REASON"
-
       - name: Upload plan result
         if: steps.plan.outputs.has_drift == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: plan-result
           path: plan_result.txt
+
+      - name: Create Drift Issue
+        if: steps.plan.outputs.has_drift == 'true'
+        id: create_issue
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const risk = '${{ steps.triage.outputs.risk_level }}';
+            const action = '${{ steps.triage.outputs.recommended_action }}';
+            const reason = '${{ steps.triage.outputs.reason }}';
+            const resources = `${{ steps.plan.outputs.drift_resources }}`.trim();
+            const summary = '${{ steps.plan.outputs.plan_summary }}';
+            const runUrl = '${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}';
+            const now = new Date().toISOString().split('T')[0];
+
+            const labels = ['Drift', risk, action];
+            if (action === 'Review') {
+              labels.push('Ticket');
+            }
+
+            const statusLine = action === 'Revert' ? 'Revert 승인 대기'
+                             : action === 'Review' ? 'Ticket - 수동 판단 필요'
+                             : 'Accept - 코드 반영 필요';
+
+            const checklist = action === 'Review'
+              ? '- [ ] 변경 원인 확인\n- [ ] 영향 범위 분석\n- [ ] Revert 또는 Accept 결정'
+              : action === 'Accept'
+              ? '- [ ] Terraform 코드에 변경사항 반영\n- [ ] PR 생성 및 리뷰'
+              : '- [ ] Revert 승인 완료 확인';
+
+            const body = [
+              `## Drift Detection Record`,
+              ``,
+              `**Status:** ${statusLine}`,
+              ``,
+              `| Field | Value |`,
+              `|-------|-------|`,
+              `| **Resource** | \`${resources}\` |`,
+              `| **Risk** | ${risk} |`,
+              `| **Action** | ${action} |`,
+              `| **Reason** | ${reason} |`,
+              `| **Plan** | ${summary} |`,
+              `| **Owner** | Cloud기술팀 |`,
+              `| **Detected** | ${now} |`,
+              `| **Workflow** | [Run Link](${runUrl}) |`,
+              ``,
+              `---`,
+              `### Follow-up`,
+              checklist,
+            ].join('\n');
+
+            const issue = await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `[Drift] ${resources} - ${now}`,
+              body: body,
+              labels: labels
+            });
+
+            core.setOutput('issue_url', issue.data.html_url);
+            core.setOutput('issue_number', issue.data.number);
 
       - name: Slack drift 알림
         if: steps.plan.outputs.has_drift == 'true'
@@ -156,6 +215,7 @@ jobs:
           DETAILS=$(echo '${{ steps.plan.outputs.drift_details }}' | tr '\n' ', ' | sed 's/,$//' | xargs)
           SUMMARY="${{ steps.plan.outputs.plan_summary }}"
           RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          ISSUE_URL="${{ steps.create_issue.outputs.issue_url }}"
           RISK="${{ steps.triage.outputs.risk_level }}"
           ACTION="${{ steps.triage.outputs.recommended_action }}"
           REASON="${{ steps.triage.outputs.reason }}"
@@ -173,13 +233,19 @@ jobs:
 
           if [ "$ACTION" = "Revert" ]; then
             ACTION_TEXT="Revert 승인 필요"
-            BUTTON_TEXT="GitHub에서 승인하기"
-          elif [ "$ACTION" = "Accept" ]; then
-            ACTION_TEXT="Accept (코드 반영 필요)"
-            BUTTON_TEXT="GitHub에서 확인하기"
+            BUTTON1_TEXT="승인하기"
+            BUTTON1_URL="${RUN_URL}"
+            BUTTON2=",{ \"type\": \"button\", \"text\": { \"type\": \"plain_text\", \"text\": \"Issue 확인\" }, \"url\": \"${ISSUE_URL}\" }"
+          elif [ "$ACTION" = "Review" ]; then
+            ACTION_TEXT="Ticket 생성됨 - 수동 판단 필요"
+            BUTTON1_TEXT="Ticket 확인"
+            BUTTON1_URL="${ISSUE_URL}"
+            BUTTON2=""
           else
-            ACTION_TEXT="Review (수동 판단 필요)"
-            BUTTON_TEXT="GitHub에서 확인하기"
+            ACTION_TEXT="Accept - 코드 반영 필요"
+            BUTTON1_TEXT="Issue 확인"
+            BUTTON1_URL="${ISSUE_URL}"
+            BUTTON2=""
           fi
 
           curl -X POST -H 'Content-type: application/json' \
@@ -225,10 +291,11 @@ jobs:
                       \"elements\": [
                         {
                           \"type\": \"button\",
-                          \"text\": { \"type\": \"plain_text\", \"text\": \"${BUTTON_TEXT}\" },
-                          \"url\": \"${RUN_URL}\",
+                          \"text\": { \"type\": \"plain_text\", \"text\": \"${BUTTON1_TEXT}\" },
+                          \"url\": \"${BUTTON1_URL}\",
                           \"style\": \"primary\"
                         }
+                        ${BUTTON2}
                       ]
                     }
                   ]
@@ -236,43 +303,6 @@ jobs:
               ]
             }" \
             ${{ secrets.SLACK_WEBHOOK_URL }}
-
-      - name: Create Drift Issue
-        if: steps.plan.outputs.has_drift == 'true'
-        uses: actions/github-script@v7
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const risk = '${{ steps.triage.outputs.risk_level }}';
-            const action = '${{ steps.triage.outputs.recommended_action }}';
-            const reason = '${{ steps.triage.outputs.reason }}';
-            const resources = `${{ steps.plan.outputs.drift_resources }}`.trim();
-            const summary = '${{ steps.plan.outputs.plan_summary }}';
-            const runUrl = '${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}';
-            const now = new Date().toISOString().split('T')[0];
-
-            const body = [
-              `## Drift Detection Record`,
-              ``,
-              `| Field | Value |`,
-              `|-------|-------|`,
-              `| **Resource** | \`${resources}\` |`,
-              `| **Risk** | ${risk} |`,
-              `| **Action** | ${action} |`,
-              `| **Reason** | ${reason} |`,
-              `| **Plan** | ${summary} |`,
-              `| **Owner** | Cloud기술팀 |`,
-              `| **Detected** | ${now} |`,
-              `| **Workflow** | [Run Link](${runUrl}) |`,
-            ].join('\n');
-
-            await github.rest.issues.create({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              title: `[Drift] ${resources} - ${now}`,
-              body: body,
-              labels: ['Drift', risk, action]
-            });
 
       - name: Slack no drift 알림
         if: steps.plan.outputs.has_drift == 'false'
