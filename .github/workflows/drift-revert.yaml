@@ -105,18 +105,13 @@ jobs:
           PLAN_SECTION=$(echo "$PLAN_RESULT" | sed -n '/Terraform will perform/,/Plan:/p')
           ATTR_CHANGES=$(echo "$PLAN_SECTION" | grep -E "^\s+~\s+\w+" | sed 's/.*~ //' | sed 's/ .*//' | grep -v "resource")
 
-          echo "DEBUG ATTR_CHANGES: $ATTR_CHANGES"
-
           ONLY_TAGS="false"
           if [ -n "$ATTR_CHANGES" ]; then
             NON_TAG_ATTRS=$(echo "$ATTR_CHANGES" | grep -vi "tags" || true)
-            echo "DEBUG NON_TAG_ATTRS: $NON_TAG_ATTRS"
             if [ -z "$NON_TAG_ATTRS" ]; then
               ONLY_TAGS="true"
             fi
           fi
-
-          echo "DEBUG ONLY_TAGS: $ONLY_TAGS"
 
           if [ "$ONLY_TAGS" = "true" ]; then
             RISK="Low"
@@ -238,6 +233,8 @@ jobs:
           ACTION="${{ steps.triage.outputs.recommended_action }}"
           REASON="${{ steps.triage.outputs.reason }}"
           COLOR="${{ steps.triage.outputs.color }}"
+          RUNBOOK_URL="https://docs.google.com/document/d/1qYRbQa0Chpt7JUnkkjJr6IE3tst14U3y/edit?usp=drive_link&ouid=112260815119551490400&rtpof=true&sd=true"
+          GUIDE_URL="https://docs.google.com/document/d/14fw3PLb-42_FlzbPCEpnzBRDSIpfootR/edit?usp=drive_link&ouid=112260815119551490400&rtpof=true&sd=true"
 
           if [ "$RISK" = "Critical" ]; then
             RISK_EMOJI=":red_circle:"
@@ -300,6 +297,12 @@ jobs:
                     {
                       \"type\": \"section\",
                       \"text\": { \"type\": \"mrkdwn\", \"text\": \"*Change Details:*\n${DETAILS}\" }
+                    },
+                    {
+                      \"type\": \"context\",
+                      \"elements\": [
+                        { \"type\": \"mrkdwn\", \"text\": \":blue_book: <${GUIDE_URL}|대응 매뉴얼>  |  :green_book: <${RUNBOOK_URL}|운영 Runbook>\" }
+                      ]
                     },
                     {
                       \"type\": \"divider\"
