@@ -1,41 +1,112 @@
 # Monthly Drift Report - 2026년 3월
 
-> 생성일: 2026-03-27
+> 생성일: 2026-03-28
 
 ## 요약
 
 | 항목 | 건수 | 비율 |
 |------|------|------|
-| 총 drift | 19건 | 100% |
-| Critical | 7건 | 37% |
-| High | 7건 | 37% |
-| Medium | 3건 | 16% |
-| Low | 2건 | 11% |
+| 총 drift | 38건 | 100% |
+| Critical | 7건 | 18% |
+| High | 26건 | 68% |
+| Medium | 3건 | 8% |
+| Low | 2건 | 5% |
 
 ## 처리 현황
 
 | Action | 건수 | 비율 |
 |--------|------|------|
-| Reverted | 7건 | 37% |
-| Review (Ticket) | 10건 | 53% |
-| Accepted | 2건 | 11% |
+| Reverted | 7건 | 18% |
+| Review (Ticket) | 29건 | 76% |
+| Accepted | 2건 | 5% |
 
 | 상태 | 건수 |
 |------|------|
-| Open (미결) | 9건 |
+| Open (미결) | 28건 |
 | Closed (완료) | 10건 |
 
 ## 주요 drift 리소스
 
 | Resource | 건수 |
 |----------|------|
-| aws_security_group.this | 14건 |
+| aws_security_group.this | 20건 |
 | aws_instance.this | 5건 |
 
 ## 전체 drift 목록
 
 | # | Resource | Labels | Status | Date |
 |---|----------|--------|--------|------|
+| [#38](https://github.com/ParkSeJin0514/drift-ops-poc/issues/38) | module.admin_ec2.aws_security_group.this - 2026-03-28 | High, Drift, Review, Ticket | open | 2026-03-28 |
+| [#37](https://github.com/ParkSeJin0514/drift-ops-poc/issues/37) | module.admin_ec2.aws_security_group.this - 2026-03-28 | High, Drift, Review, Ticket | open | 2026-03-28 |
+| [#36](https://github.com/ParkSeJin0514/drift-ops-poc/issues/36) | module.admin_ec2.aws_security_group.this
+module.eks.data.tls_certificate.oidc
+module.eks.aws_eks_access_entry.admin
+module.eks.aws_eks_access_policy_association.admin_cluster_admin
+module.eks.aws_eks_addon.coredns - 2026-03-28 | High, Drift, Review, Ticket | open | 2026-03-28 |
+| [#35](https://github.com/ParkSeJin0514/drift-ops-poc/issues/35) | module.admin_ec2.aws_security_group.this
+module.eks.data.tls_certificate.oidc
+module.eks.aws_eks_access_entry.admin
+module.eks.aws_eks_access_policy_association.admin_cluster_admin
+module.eks.aws_eks_addon.coredns - 2026-03-28 | High, Drift, Review, Ticket | open | 2026-03-28 |
+| [#34](https://github.com/ParkSeJin0514/drift-ops-poc/issues/34) | module.admin_ec2.aws_security_group.this
+module.eks.data.tls_certificate.oidc
+module.eks.aws_eks_access_entry.admin
+module.eks.aws_eks_access_policy_association.admin_cluster_admin
+module.eks.aws_eks_addon.coredns - 2026-03-28 | High, Drift, Review, Ticket | open | 2026-03-28 |
+| [#33](https://github.com/ParkSeJin0514/drift-ops-poc/issues/33) | module.admin_ec2.aws_security_group.this
+module.eks.data.tls_certificate.oidc
+module.eks.aws_eks_access_entry.admin
+module.eks.aws_eks_access_policy_association.admin_cluster_admin
+module.eks.aws_eks_addon.coredns - 2026-03-27 | High, Drift, Review, Ticket | open | 2026-03-27 |
+| [#32](https://github.com/ParkSeJin0514/drift-ops-poc/issues/32) | module.admin_ec2.aws_security_group.this
+module.eks.data.tls_certificate.oidc
+module.eks.aws_eks_access_entry.admin
+module.eks.aws_eks_access_policy_association.admin_cluster_admin
+module.eks.aws_eks_addon.coredns - 2026-03-27 | High, Drift, Review, Ticket | open | 2026-03-27 |
+| [#31](https://github.com/ParkSeJin0514/drift-ops-poc/issues/31) | module.admin_ec2.aws_security_group.this
+module.eks.data.tls_certificate.oidc
+module.eks.aws_eks_access_entry.admin
+module.eks.aws_eks_access_policy_association.admin_cluster_admin
+module.eks.aws_eks_addon.coredns - 2026-03-27 | High, Drift, Review, Ticket | open | 2026-03-27 |
+| [#30](https://github.com/ParkSeJin0514/drift-ops-poc/issues/30) | module.admin_ec2.aws_security_group.this
+module.eks.data.tls_certificate.oidc
+module.eks.aws_eks_access_entry.admin
+module.eks.aws_eks_access_policy_association.admin_cluster_admin
+module.eks.aws_eks_addon.coredns - 2026-03-27 | High, Drift, Review, Ticket | open | 2026-03-27 |
+| [#29](https://github.com/ParkSeJin0514/drift-ops-poc/issues/29) | module.admin_ec2.aws_security_group.this
+module.eks.data.tls_certificate.oidc
+module.eks.aws_eks_access_entry.admin
+module.eks.aws_eks_access_policy_association.admin_cluster_admin
+module.eks.aws_eks_addon.coredns - 2026-03-27 | High, Drift, Review, Ticket | open | 2026-03-27 |
+| [#28](https://github.com/ParkSeJin0514/drift-ops-poc/issues/28) | module.admin_ec2.aws_security_group.this
+module.eks.data.tls_certificate.oidc
+module.eks.aws_eks_access_entry.admin
+module.eks.aws_eks_access_policy_association.admin_cluster_admin
+module.eks.aws_eks_addon.coredns - 2026-03-27 | High, Drift, Review, Ticket | open | 2026-03-27 |
+| [#27](https://github.com/ParkSeJin0514/drift-ops-poc/issues/27) | module.admin_ec2.aws_security_group.this
+module.eks.data.tls_certificate.oidc
+module.eks.aws_eks_access_entry.admin
+module.eks.aws_eks_access_policy_association.admin_cluster_admin
+module.eks.aws_eks_addon.coredns - 2026-03-27 | High, Drift, Review, Ticket | open | 2026-03-27 |
+| [#26](https://github.com/ParkSeJin0514/drift-ops-poc/issues/26) | module.admin_ec2.aws_security_group.this
+module.eks.data.tls_certificate.oidc
+module.eks.aws_eks_access_entry.admin
+module.eks.aws_eks_access_policy_association.admin_cluster_admin
+module.eks.aws_eks_addon.coredns - 2026-03-27 | High, Drift, Review, Ticket | open | 2026-03-27 |
+| [#25](https://github.com/ParkSeJin0514/drift-ops-poc/issues/25) | module.admin_ec2.aws_security_group.this
+module.eks.data.tls_certificate.oidc
+module.eks.aws_eks_access_entry.admin
+module.eks.aws_eks_access_policy_association.admin_cluster_admin
+module.eks.aws_eks_addon.coredns - 2026-03-27 | High, Drift, Review, Ticket | open | 2026-03-27 |
+| [#24](https://github.com/ParkSeJin0514/drift-ops-poc/issues/24) | module.admin_ec2.aws_security_group.this
+module.eks.data.tls_certificate.oidc
+module.eks.aws_eks_access_entry.admin
+module.eks.aws_eks_access_policy_association.admin_cluster_admin
+module.eks.aws_eks_addon.coredns - 2026-03-27 | High, Drift, Review, Ticket | open | 2026-03-27 |
+| [#23](https://github.com/ParkSeJin0514/drift-ops-poc/issues/23) | module.admin_ec2.aws_security_group.this - 2026-03-27 | High, Drift, Review, Ticket | open | 2026-03-27 |
+| [#22](https://github.com/ParkSeJin0514/drift-ops-poc/issues/22) | module.admin_ec2.aws_security_group.this - 2026-03-27 | High, Drift, Review, Ticket | open | 2026-03-27 |
+| [#21](https://github.com/ParkSeJin0514/drift-ops-poc/issues/21) | module.admin_ec2.aws_security_group.this - 2026-03-27 | High, Drift, Review, Ticket | open | 2026-03-27 |
+| [#20](https://github.com/ParkSeJin0514/drift-ops-poc/issues/20) | module.admin_ec2.aws_security_group.this - 2026-03-27 | High, Drift, Review, Ticket | open | 2026-03-27 |
 | [#19](https://github.com/ParkSeJin0514/drift-ops-poc/issues/19) | module.admin_ec2.aws_security_group.this - 2026-03-27 | High, Drift, Review, Ticket | open | 2026-03-27 |
 | [#18](https://github.com/ParkSeJin0514/drift-ops-poc/issues/18) | module.admin_ec2.aws_security_group.this - 2026-03-27 | High, Drift, Review, Ticket | open | 2026-03-27 |
 | [#17](https://github.com/ParkSeJin0514/drift-ops-poc/issues/17) | module.admin_ec2.aws_security_group.this - 2026-03-27 | High, Drift, Review, Ticket | open | 2026-03-27 |
