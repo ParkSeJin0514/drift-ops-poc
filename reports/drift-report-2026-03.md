@@ -1,41 +1,47 @@
 # Monthly Drift Report - 2026년 3월
 
-> 생성일: 2026-03-28
+> 생성일: 2026-03-29
 
 ## 요약
 
 | 항목 | 건수 | 비율 |
 |------|------|------|
-| 총 drift | 38건 | 100% |
-| Critical | 7건 | 18% |
-| High | 26건 | 68% |
-| Medium | 3건 | 8% |
+| 총 drift | 43건 | 100% |
+| Critical | 7건 | 16% |
+| High | 31건 | 72% |
+| Medium | 3건 | 7% |
 | Low | 2건 | 5% |
 
 ## 처리 현황
 
 | Action | 건수 | 비율 |
 |--------|------|------|
-| Reverted | 7건 | 18% |
-| Review (Ticket) | 29건 | 76% |
+| Reverted | 7건 | 16% |
+| Review (Ticket) | 34건 | 79% |
 | Accepted | 2건 | 5% |
 
 | 상태 | 건수 |
 |------|------|
-| Open (미결) | 28건 |
+| Open (미결) | 33건 |
 | Closed (완료) | 10건 |
 
 ## 주요 drift 리소스
 
 | Resource | 건수 |
 |----------|------|
-| aws_security_group.this | 20건 |
+| aws_security_group.this | 24건 |
 | aws_instance.this | 5건 |
 
 ## 전체 drift 목록
 
 | # | Resource | Labels | Status | Date |
 |---|----------|--------|--------|------|
+| [#43](https://github.com/ParkSeJin0514/drift-ops-poc/issues/43) | module.admin_ec2.aws_security_group.this
+module.eks.aws_eks_node_group.this - 2026-03-28 | High, Drift, Review, Ticket | open | 2026-03-28 |
+| [#42](https://github.com/ParkSeJin0514/drift-ops-poc/issues/42) | module.admin_ec2.aws_security_group.this - 2026-03-28 | High, Drift, Review, Ticket | open | 2026-03-28 |
+| [#41](https://github.com/ParkSeJin0514/drift-ops-poc/issues/41) | module.admin_ec2.aws_security_group.this - 2026-03-28 | High, Drift, Review, Ticket | open | 2026-03-28 |
+| [#40](https://github.com/ParkSeJin0514/drift-ops-poc/issues/40) | module.admin_ec2.aws_security_group.this - 2026-03-28 | High, Drift, Review, Ticket | open | 2026-03-28 |
+| [#39](https://github.com/ParkSeJin0514/drift-ops-poc/issues/39) | module.admin_ec2.aws_security_group.this - 2026-03-28 | High, Drift, Review, Ticket | open | 2026-03-28 |
 | [#38](https://github.com/ParkSeJin0514/drift-ops-poc/issues/38) | module.admin_ec2.aws_security_group.this - 2026-03-28 | High, Drift, Review, Ticket | open | 2026-03-28 |
 | [#37](https://github.com/ParkSeJin0514/drift-ops-poc/issues/37) | module.admin_ec2.aws_security_group.this - 2026-03-28 | High, Drift, Review, Ticket | open | 2026-03-28 |
 | [#36](https://github.com/ParkSeJin0514/drift-ops-poc/issues/36) | module.admin_ec2.aws_security_group.this
